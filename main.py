@@ -42,7 +42,7 @@ def get_best_vehicle(total_weight, total_dist, max_radius):
     best_family = None
     min_total_cost = float('inf')
     
-    for v in vehicules: #on parcourt tous les véhicules
+    for index, v in data_vehicles.iterrows(): #on parcourt tous les véhicules
         if v['max_capacity'] >= total_weight:
             #calcul du coût
             current_cost = v['rental_cost'] + v['fuel_cost']*total_dist + v['radius_cost'] * max_radius    
@@ -97,10 +97,10 @@ for A in range(10):
         sequence = [0, order_id, 0]
         
         #Étape 2 : Calculer la distance et le rayon
-        d_tot, r_max = get_route_stats(sequence, A)
+        d_tot, r_max = get_route_dist_rad(sequence, A)
         
         #Étape 3 : Trouver le meilleur véhicule pour cette route
-        family = get_best_vehicle_for_route(order_weight, d_tot, r_max)
+        family = get_best_vehicle(order_weight, d_tot, r_max)
         
         if family:
             final_routes.append({"family": family, "sequence": sequence})
