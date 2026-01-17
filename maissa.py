@@ -50,7 +50,7 @@ def temps_max(i, j, family, instance_idx):
     """
     row_f = data_vehicles.loc[data_vehicles["family"] == family].iloc[0]
     speed_f = row_f["speed"]
-    p_f = row_f["service_time"]
+    p_f = row_f["parking_time"]
     gamma_f = gamma_f_max(row_f)
     distance = distM(i, j, instance_idx)
     return (distance / speed_f + p_f) * gamma_f
