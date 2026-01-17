@@ -63,7 +63,7 @@ for k in range(1, 11):
 #########################################
 #          FONCTIONS GÉOMÉTRIQUES
 #########################################
-#Coordonnees
+# Coordonnees
 def yj_yi(phij, phii): #yj - yi
     return rho * 2 * np.pi * (phij - phii) / 360
 
