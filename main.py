@@ -293,112 +293,57 @@ def get_closest_routes(target_route_id, centers, k=5):
     distances.sort(key=lambda x: x[1])
     return [x[0] for x in distances[:k]]
 
-def deplacer_client_proche(routes, instance_idx, k_neighbors=5):
-    gain = True
-    while gain:
-        gain = False
-        centers = get_route_centers(routes)
-        
-        for i in range(len(routes)):
-            routes_proches_id = get_closest_routes(i, centers, k=k_neighbors)
-            route_a = routes[i]
-            
-            #copie
-            orders_to_test = list(route_a["sequence"][1:-1])
-            
-            for order in orders_to_test:
-                for j in routes_proches_id:
-                    if j >= len(routes): continue #si routes supprimées
-                    route_b = routes[j]
-                    
-                    #coûts avant modif
-                    _, old_cost_a = get_best_vehicle(route_a["sequence"], instance_idx)
-                    _, old_cost_b = get_best_vehicle(route_b["sequence"], instance_idx)
-                    
-                    for pos in range(1, len(route_b["sequence"])):
-                        new_seq_b = route_b["sequence"][:pos] + [order] + route_b["sequence"][pos:]
-                        
-                        best_f_b, new_cost_b = get_best_vehicle(new_seq_b, instance_idx)
-                        
-                        if best_f_b is not None:
-                            new_seq_a = [n for n in route_a["sequence"] if n != order]
-                            
-                            if len(new_seq_a) <= 2:
-                                new_cost_a = 0
-                                best_f_a = None
-                            else:
-                                best_f_a, new_cost_a = get_best_vehicle(new_seq_a, instance_idx)
-                            
-                            #Gain (on swap ssi gain > seuil de 1 centime)
-                            if (new_cost_a + new_cost_b) < (old_cost_a + old_cost_b) - 0.01:
-                                route_a["sequence"] = new_seq_a
-                                route_a["family"] = best_f_a
-                                route_b["sequence"] = new_seq_b
-                                route_b["family"] = best_f_b
-                                gain = True
-                                break # Quitte la boucle 'pos'
-                    if gain: break # Quitte la boucle 'j'
-                if gain: break # Quitte la boucle 'orders to test'
-            if gain: break # Quitte la boucle 'i' pour recalculer centers
-        #on enlève les routes vides
-        routes = [r for r in routes if len(r["sequence"]) > 2]
-    return routes
-
 
 def eliminer_petites_routes(routes, instance_idx):
-    #on trie les routes par nombre de clients croissant
     indices_tries = sorted(range(len(routes)), key=lambda i: len(routes[i]['sequence']))
-    
     routes_a_supprimer = []
     
     for i in indices_tries:
         route_source = routes[i]
-        sequence_source = list(route_source["sequence"][1:-1]) #les clients de la petite route
+        clients_a_deplacer = route_source["sequence"][1:-1]
         
-        if len(sequence_source)>4:continue
+        #que les petites routes
+        if len(clients_a_deplacer) > 7 or len(clients_a_deplacer) == 0:
+            continue
 
-        #on garde trace des clients que l'on a réussi à déplacer
-        clients_deplaces = []
-        modif_temporaires = [] #pour annuler si on ne peut pas tout déplacer
-
-        for client in sequence_source:
+        #copies locales pour pouvoir annuler si l'élimination échoue
+        temp_sequences = {j: list(routes[j]["sequence"]) for j in range(len(routes))}
+        temp_families = {j: routes[j]["family"] for j in range(len(routes))}
+        reussite_pour_tous = True
+        
+        for client in clients_a_deplacer:
             place_trouvee = False
-            
-            #on cherche une place dans TOUTES les autres routes
+            #on cherche une cible parmi les routes non supprimées et différente de la source
             for j in range(len(routes)):
                 if i == j or j in routes_a_supprimer: continue
                 
-                route_cible = routes[j]
-                
-                #test d'insertion à toutes les positions possibles de la route cible
-                for pos in range(1, len(route_cible["sequence"])):
-                    nouvelle_seq = route_cible["sequence"][:pos] + [client] + route_cible["sequence"][pos:]
-                    
-                    #vérification capacité et temps via get_best_vehicle
+                #on teste sur la séquence DÉJÀ MODIFIÉE de la cible
+                seq_cible = temp_sequences[j]
+                for pos in range(1, len(seq_cible)):
+                    nouvelle_seq = seq_cible[:pos] + [client] + seq_cible[pos:]
                     best_f, _ = get_best_vehicle(nouvelle_seq, instance_idx)
                     
                     if best_f is not None:
-                        #on mémorise la modification pour cette route cible
-                        modif_temporaires.append((j, nouvelle_seq, best_f))
-                        clients_deplaces.append(client)
+                        #mise à jour de la copie locale pour le prochain client
+                        temp_sequences[j] = nouvelle_seq
+                        temp_families[j] = best_f
                         place_trouvee = True
                         break
                 if place_trouvee: break
             
             if not place_trouvee:
-                break #impossible de vider entièrement cette route -> on passe à la suivante
+                reussite_pour_tous = False
+                break
         
-        #si tous les clients de la route source ont été déplacés ailleurs
-        if len(clients_deplaces) == len(sequence_source):
-            #on applique les modifications aux routes cibles
-            for idx_route, seq, fam in modif_temporaires:
-                routes[idx_route]["sequence"] = seq
-                routes[idx_route]["family"] = fam
+        if reussite_pour_tous:
+            #validation des changements dans la liste principale
+            for j, seq in temp_sequences.items():
+                routes[j]["sequence"] = seq
+                routes[j]["family"] = temp_families[j]
             routes_a_supprimer.append(i)
-            print(f"Route {i} éliminée !")
-
-    #Nettoyage final des routes supprimées
+            #print(f"Route {i} éliminée !")
     return [r for idx, r in enumerate(routes) if idx not in routes_a_supprimer]
+
 
 
 #########################################
@@ -476,7 +421,22 @@ for A in range(10):
     
     if final_routes:
         final_routes = eliminer_petites_routes(final_routes, A)
-        final_routes = deplacer_client_proche(final_routes, A, k_neighbors=0)
+
+
+    #VERIF
+    clients_sol = set()
+    for r in final_routes:
+        for node in r["sequence"]:
+            if node != 0:
+                clients_sol.add(node)
+
+    nb_clients_attendus = len(orders_id)
+    nb_clients_trouves = len(clients_sol)
+
+    if nb_clients_trouves != nb_clients_attendus:
+        print(f"ATTENTION : {nb_clients_attendus - nb_clients_trouves} commandes manquantes !")
+    else:
+        print(f"Succès : Les {nb_clients_trouves} commandes sont bien présentes.")
 
 
     #########################################
