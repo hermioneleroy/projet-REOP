@@ -81,27 +81,27 @@ def is_route_possible(family, sequence, instance_idx):
         instance_idx (int): The index of the instance file.
     """
     if not isinstance(sequence, (list, tuple)):
-        print("sequence must be a list or tuple.")
+        #print("sequence must be a list or tuple.")
         return False
     if not (0 <= instance_idx < len(instances)):
-        print("instance_idx out of range.")
+        #print("instance_idx out of range.")
         return False
 
     # Pas de dépôt dans la séquence (implicite au début)
     if 0 in sequence:
-        print("depot in sequence")
+        #print("depot in sequence")
         return False
     
     #Noeuds valides
     inst_size = len(instances[instance_idx])
     for node in sequence:
         if not (0 <= node < inst_size):
-            print("invalid node in sequence")
+            #print("invalid node in sequence")
             return False
     
     # Pas de doublons dans la séquence
     if len(sequence) != len(set(sequence)):
-        print("duplicates in sequence")
+        #print("duplicates in sequence")
         return False
     
     inst = instances[instance_idx]
@@ -117,7 +117,7 @@ def is_route_possible(family, sequence, instance_idx):
         total_weight += w
 
     if total_weight > capacity:
-        print("capacity exceeded")
+        #print("capacity exceeded")
         return False
     
     # Contraine de temps ( fenêtres de temps )
@@ -141,7 +141,7 @@ def is_route_possible(family, sequence, instance_idx):
 
         # faisabilité fenêtre
         if start_service > tmax_j:
-            print("time window violated")
+            #print("time window violated")
             return False
 
         # départ après service
