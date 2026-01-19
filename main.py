@@ -101,6 +101,16 @@ def temps_max(i, j, family, instance_idx):
     distance = distM(i, j, instance_idx)
     return (distance / speed_f + p_f) * gamma_f
 
+def get_gamma_f_t(family, t_sec):
+    #gamma qui dépend de la famille et du temps (en seconde)
+    row_f = data_vehicles.loc[data_vehicles["family"] == family].iloc[0] #récupère une ligne de vehicles où la famille est la bonne
+    omega = 2*np.pi/(24*3600)  #pulsation -> cycle de 24h
+    gamma = 0 #initialisation
+    for n in range(4):
+        alpha_n = row_f[f"fourier_cos_{n}"]
+        beta_n = row_f[f"fourier_sin_{n}"]
+        gamma += alpha_n*math.cos(n*omega*t_sec) + beta_n*math.sin(n*omega*t_sec)
+    return gamma
 
 
 ### GESTION DES CONTRAINTES
