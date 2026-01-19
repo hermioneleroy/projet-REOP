@@ -17,6 +17,8 @@ phi_0 = 48.764246
 
 # Chargement véhicules
 data_vehicles = pd.read_csv("vehicles.csv")
+VEHICLES_DATA = data_vehicles.to_dict(orient="records") #gain de temps complexité
+VEHICLES_DICT = {v['family']: v for v in VEHICLES_DATA}
 
 # Chargement instances
 instances = []
@@ -98,33 +100,8 @@ def get_route_dist_rad(sequence, instance_idx):
     return total_dist, max_radius
 
 ### FONCTIONS TEMPORELLES
-def gamma_f_max(row_f):
-    # majorant simple
-    return sum(
-        np.sqrt(row_f[f"fourier_cos_{n}"]**2 + row_f[f"fourier_sin_{n}"]**2)
-        for n in range(4)
-    )
-
-def temps_max(i, j, family, instance_idx):    
-    """
-    Returns the maximum travel time for a given family and instance index from i to j.
-    tau_f(i,j|max) = (distM(i,j)/s_f + p_f) * gamma_f_max
-    Args:
-        family (str): The family of vehicles
-        i (int): The starting node index.
-        j (int): The ending node index.
-        instance_idx (int): The index of the instance file.
-    """
-    row_f = data_vehicles.loc[data_vehicles["family"] == family].iloc[0]
-    speed_f = row_f["speed"]
-    p_f = row_f["parking_time"]
-    gamma_f = gamma_f_max(row_f)
-    distance = distM(i, j, instance_idx)
-    return (distance / speed_f + p_f) * gamma_f
-
-def get_gamma_f_t(family, t_sec):
-    #gamma qui dépend de la famille et du temps (en seconde)
-    row_f = data_vehicles.loc[data_vehicles["family"] == family].iloc[0] #récupère une ligne de vehicles où la famille est la bonne
+def get_gamma_f_t(row_f, t_sec):
+    #gamma qui dépend de la ligne de famille et du temps (en seconde)
     omega = 2*np.pi/(24*3600)  #pulsation -> cycle de 24h
     gamma = 0 #initialisation
     for n in range(4):
@@ -134,7 +111,7 @@ def get_gamma_f_t(family, t_sec):
     return gamma
 
 
-def is_time_possible(family, sequence, instance_idx):
+def is_time_possible(row_f, sequence, instance_idx):
     inst = instances[instance_idx]
     current_time = 0.0 #départ du dépôt à t=0
     prev_order = 0
@@ -143,10 +120,9 @@ def is_time_possible(family, sequence, instance_idx):
         d = distM(prev_order, j, instance_idx) #distance
         
         #Calcul de gamma: temps de départ = current_time
-        gamma_f_t = get_gamma_f_t(family, current_time)
+        gamma_f_t = get_gamma_f_t(row_f, current_time)
         
         #temps de trajet = (d/v + temps parking)*Gamma(f,t)
-        row_f = data_vehicles.loc[data_vehicles["family"] == family].iloc[0] #récupère une ligne de vehicles où la famille est la bonne
         travel_time = (d/row_f["speed"] + row_f["parking_time"])*gamma_f_t
         
         #Arrivée au client j
@@ -255,22 +231,22 @@ def get_best_vehicle(sequence, instance_idx):
     best_family = None
     min_total_cost = float('inf')
     
-    for index, v in data_vehicles.iterrows():
-        family = v['family']
-        #vérification capacité (évite appel is_route_possible lourd)
+    for v in VEHICLES_DATA:
+        #vérification capacité (évite appel is_time_possible lourd)
         if v['max_capacity'] >= total_weight:
             #vérification temps 
-            if is_time_possible(family, sequence, instance_idx):
+            if is_time_possible(v, sequence, instance_idx):
                 #minimiser le coût
                 current_cost = v['rental_cost'] + v['fuel_cost']*total_dist + v['radius_cost']*max_radius    
                 if current_cost < min_total_cost:
                     min_total_cost = current_cost
-                    best_family = family
+                    best_family = v['family']
     return best_family, min_total_cost
 
 
 
-def optimize_route_permut(sequence, instance_idx, family):
+def optimize_route_permut(sequence, instance_idx, family_id):
+    row_f = VEHICLES_DICT[family_id]
     best_seq = list(sequence)
     #on ne touche pas au premier et dernier (dépôts : 0)
     gain = True
@@ -282,7 +258,7 @@ def optimize_route_permut(sequence, instance_idx, family):
                 new_seq = best_seq[:i] + best_seq[i:j+1][::-1] + best_seq[j+1:]
                 
                 #vérification: faisable avec la famille actuelle?
-                if is_time_possible(family, new_seq, instance_idx):
+                if is_time_possible(row_f, new_seq, instance_idx):
                     #compare la distance
                     d_old, _ = get_route_dist_rad(best_seq, instance_idx)
                     d_new, _ = get_route_dist_rad(new_seq, instance_idx)
@@ -304,7 +280,7 @@ def get_route_centers(routes):
         centers.append((x_moy, y_moy))
     return centers
 
-def get_closest_routes(target_route_id, centers, k=10):
+def get_closest_routes(target_route_id, centers, k=5):
     #renvoie les k plus proches routes de la route target_route_id
     distances = []
     for i, center in enumerate(centers):
@@ -317,7 +293,7 @@ def get_closest_routes(target_route_id, centers, k=10):
     distances.sort(key=lambda x: x[1])
     return [x[0] for x in distances[:k]]
 
-def deplacer_client_proche(routes, instance_idx, k_neighbors=10):
+def deplacer_client_proche(routes, instance_idx, k_neighbors=5):
     gain = True
     while gain:
         gain = False
@@ -367,7 +343,6 @@ def deplacer_client_proche(routes, instance_idx, k_neighbors=10):
         #on enlève les routes vides
         routes = [r for r in routes if len(r["sequence"]) > 2]
     return routes
-
 
 
 
