@@ -185,20 +185,6 @@ def get_route_dist_rad(sequence, instance_idx):
     return total_dist, max_radius
 
 
-def get_best_vehicle(total_weight, total_dist, max_radius):
-    best_family = None
-    min_total_cost = float('inf')
-    
-    for index, v in data_vehicles.iterrows(): #on parcourt tous les véhicules
-        if v['max_capacity'] >= total_weight:
-            #calcul du coût
-            current_cost = v['rental_cost'] + v['fuel_cost']*total_dist + v['radius_cost']*max_radius    
-            #on minimise le coût
-            if current_cost < min_total_cost:
-                min_total_cost = current_cost
-                best_family = v['family']   
-    return best_family
-
 def get_best_vehicle(sequence, instance_idx, df_inst):
     #calcul des caractéristiques de la route "sequence"
     total_weight = sum(df_inst.loc[df_inst['id'] == node, 'order_weight'].values[0] 
@@ -318,9 +304,7 @@ for A in range(10):
 
     final_routes = []
     for r_id, sequence in routes_simples.items():
-        total_w = sum(df_inst.loc[df_inst['id'] == client_id, 'order_weight'].values[0] for client_id in sequence if client_id != 0)
-        d_tot, r_max = get_route_dist_rad(sequence, A)
-        family = get_best_vehicle(total_w, d_tot, r_max)
+        family, cost = get_best_vehicle(sequence, A, df_inst)
 
         if family:
             final_routes.append({"family":family, "sequence":sequence})
