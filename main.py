@@ -32,23 +32,44 @@ for k in range(1, 11):
 #########################################
 
 ### FONCTIONS GEOGRAPHIQUES (coordonnées, distances)
-# Coordonnees
-def yj_yi(phij, phii): #yj - yi
-    return rho * 2 * np.pi * (phij - phii) / 360
+# Coordonnées
+def matrice_distance(df_inst):
+    #calcul des distances (en une seule fois, pour la complexité)
+    n = len(df_inst)
+    
+    #vecteurs x et y
+    x_coords = np.zeros(n)
+    y_coords = np.zeros(n)
+    
+    cos_phi0 = math.cos(2 * np.pi * phi_0 / 360)
+    
+    for i in range(n):
+        lat = df_inst.iloc[i]['latitude']
+        lon = df_inst.iloc[i]['longitude']
+        x_coords[i] = rho * cos_phi0 * 2 * np.pi * lon / 360
+        y_coords[i] = rho * 2 * np.pi * lat / 360
 
-def xj_xi(lambdaj, lambdai): #xj - xi
-    return rho * math.cos(2 * np.pi * phi_0 / 360) * 2 * np.pi * (lambdaj - lambdai) / 360
+    matrix_M = np.zeros((n, n))
+    matrix_E = np.zeros((n, n))
 
-def distM(i, j, instance_idx): #distance de manhattan entre i et j du fichier A
-    deltax = xj_xi(instances[instance_idx][j]["longitude"], instances[instance_idx][i]["longitude"])
-    deltay = yj_yi(instances[instance_idx][j]["latitude"], instances[instance_idx][i]["latitude"])
-    return abs(deltax) + abs(deltay)
+    for i in range(n):
+        for j in range(n):
+            dx = x_coords[j] - x_coords[i]
+            dy = y_coords[j] - y_coords[i]
+            
+            #distance de Manhattan
+            matrix_M[i, j] = abs(dx) + abs(dy)
+            
+            #distance euclidienne
+            matrix_E[i, j] = math.sqrt(dx**2 + dy**2) 
+    return matrix_M, matrix_E, x_coords, y_coords
 
-#Fonction distance euclidienne
-def distE(i, j, A):
-    deltax = xj_xi(instances[A][j]["longitude"], instances[A][i]["longitude"])
-    deltay = yj_yi(instances[A][j]["latitude"], instances[A][i]["latitude"])
-    return math.sqrt(deltax**2 + deltay**2)
+
+def distM(i, j, instance_idx): 
+    return distance_mat_M[i, j]
+
+def distE(i, j, instance_idx):
+    return distance_mat_E[i, j]
 
 def get_route_dist_rad(sequence, instance_idx):
     #renvoie la distance totale parcourue et le rayon d'une route
@@ -273,6 +294,83 @@ def optimize_route_permut(sequence, instance_idx, family):
     return best_seq
 
 
+def get_route_centers(routes):
+    #liste des coordonnées des centres des routes
+    centers = []
+    for r in routes:
+        seq = r["sequence"]
+        x_moy = np.mean([x_coords[order] for order in seq if order != 0])
+        y_moy = np.mean([y_coords[order] for order in seq if order != 0])
+        centers.append((x_moy, y_moy))
+    return centers
+
+def get_closest_routes(target_route_id, centers, k=10):
+    #renvoie les k plus proches routes de la route target_route_id
+    distances = []
+    for i, center in enumerate(centers):
+        if i == target_route_id: continue
+        #Distance entre le centre de la route "target" à laquelle on s'intéresse et la route 'i'
+        d = math.sqrt((centers[target_route_id][0] - center[0])**2 + (centers[target_route_id][1] - center[1])**2)
+        distances.append((i, d))
+
+    #on trie par distance et on garde les K plus proches
+    distances.sort(key=lambda x: x[1])
+    return [x[0] for x in distances[:k]]
+
+def deplacer_client_proche(routes, instance_idx, k_neighbors=10):
+    gain = True
+    while gain:
+        gain = False
+        centers = get_route_centers(routes)
+        
+        for i in range(len(routes)):
+            routes_proches_id = get_closest_routes(i, centers, k=k_neighbors)
+            route_a = routes[i]
+            
+            #copie
+            orders_to_test = list(route_a["sequence"][1:-1])
+            
+            for order in orders_to_test:
+                for j in routes_proches_id:
+                    if j >= len(routes): continue #si routes supprimées
+                    route_b = routes[j]
+                    
+                    #coûts avant modif
+                    _, old_cost_a = get_best_vehicle(route_a["sequence"], instance_idx)
+                    _, old_cost_b = get_best_vehicle(route_b["sequence"], instance_idx)
+                    
+                    for pos in range(1, len(route_b["sequence"])):
+                        new_seq_b = route_b["sequence"][:pos] + [order] + route_b["sequence"][pos:]
+                        
+                        best_f_b, new_cost_b = get_best_vehicle(new_seq_b, instance_idx)
+                        
+                        if best_f_b is not None:
+                            new_seq_a = [n for n in route_a["sequence"] if n != order]
+                            
+                            if len(new_seq_a) <= 2:
+                                new_cost_a = 0
+                                best_f_a = None
+                            else:
+                                best_f_a, new_cost_a = get_best_vehicle(new_seq_a, instance_idx)
+                            
+                            #Gain (on swap ssi gain > seuil de 1 centime)
+                            if (new_cost_a + new_cost_b) < (old_cost_a + old_cost_b) - 0.01:
+                                route_a["sequence"] = new_seq_a
+                                route_a["family"] = best_f_a
+                                route_b["sequence"] = new_seq_b
+                                route_b["family"] = best_f_b
+                                gain = True
+                                break # Quitte la boucle 'pos'
+                    if gain: break # Quitte la boucle 'j'
+                if gain: break # Quitte la boucle 'orders to test'
+            if gain: break # Quitte la boucle 'i' pour recalculer centers
+        #on enlève les routes vides
+        routes = [r for r in routes if len(r["sequence"]) > 2]
+    return routes
+
+
+
+
 
 #########################################
 #          BOUCLE SUR LES INSTANCES
@@ -280,6 +378,7 @@ def optimize_route_permut(sequence, instance_idx, family):
 for A in range(10):
     print(f"Instance {A+1:02d}...")
     df_inst = pd.read_csv(f"instance_{A+1:02d}.csv")
+    distance_mat_M, distance_mat_E, x_coords, y_coords = matrice_distance(df_inst)
     weights_dict = df_inst.set_index('id')['order_weight'].to_dict() #gain de temps
     orders = df_inst[df_inst['order_weight'].notna()].copy() #commandes (on exclut le dépôt)
     orders_id = orders['id'].astype(int).tolist()
@@ -346,6 +445,9 @@ for A in range(10):
             final_family, final_cost = get_best_vehicle(optimized_seq, A)
             final_routes.append({"family":final_family, "sequence":optimized_seq})
     
+    if final_routes:
+        final_routes = deplacer_client_proche(final_routes, A, k_neighbors=10)
+
 
     #########################################
     #      EXPORT CSV (Format Flexible)
