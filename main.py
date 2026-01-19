@@ -31,6 +31,7 @@ for k in range(1, 11):
 #           FONCTIONS AUXILIAIRES
 #########################################
 
+### FONCTIONS GEOGRAPHIQUES (coordonnées, distances)
 # Coordonnees
 def yj_yi(phij, phii): #yj - yi
     return rho * 2 * np.pi * (phij - phii) / 360
@@ -43,6 +44,39 @@ def distM(i, j, instance_idx): #distance de manhattan entre i et j du fichier A
     deltay = yj_yi(instances[instance_idx][j]["latitude"], instances[instance_idx][i]["latitude"])
     return abs(deltax) + abs(deltay)
 
+#Fonction distance euclidienne
+def distE(i, j, A):
+    deltax = xj_xi(instances[A][j]["longitude"], instances[A][i]["longitude"])
+    deltay = yj_yi(instances[A][j]["latitude"], instances[A][i]["latitude"])
+    return math.sqrt(deltax**2 + deltay**2)
+
+def get_route_dist_rad(sequence, instance_idx):
+    #renvoie la distance totale parcourue et le rayon d'une route
+    total_dist = 0
+    max_radius = 0
+    
+    #on parcourt la séquence par paires (i, j)
+    for k in range(len(sequence)-1):
+        i_idx = sequence[k]
+        j_idx = sequence[k+1]
+        
+        #distance de Manhattan entre deux points consécutifs
+        d = distM(i_idx, j_idx, instance_idx)
+        total_dist += d
+        
+    #Calcul du rayon (Moitié du diamètre Euclidien entre les commandes)
+    orders_in_route = sequence[1:-1]
+    max_euclidean_dist = 0
+    if len(orders_in_route) > 1:
+        for idx_a in range(len(orders_in_route)):
+            for idx_b in range(idx_a + 1, len(orders_in_route)):
+                d_e = distE(orders_in_route[idx_a], orders_in_route[idx_b], instance_idx)
+                if d_e > max_euclidean_dist:
+                    max_euclidean_dist = d_e
+    max_radius = 0.5 * max_euclidean_dist
+    return total_dist, max_radius
+
+### FONCTIONS TEMPORELLES
 def gamma_f_max(row_f):
     # majorant simple
     return sum(
@@ -69,7 +103,7 @@ def temps_max(i, j, family, instance_idx):
 
 
 
-
+### GESTION DES CONTRAINTES
 def is_route_possible(family, sequence, instance_idx):
     """
     Determines if a given sequence of nodes can form a valid route
@@ -147,44 +181,10 @@ def is_route_possible(family, sequence, instance_idx):
         # départ après service
         current_time = start_service + lj
         prev = j
-
     return True
 
 
-#Fonction distance euclidienne
-def distE(i, j, A):
-    deltax = xj_xi(instances[A][j]["longitude"], instances[A][i]["longitude"])
-    deltay = yj_yi(instances[A][j]["latitude"], instances[A][i]["latitude"])
-    return math.sqrt(deltax**2 + deltay**2)
-
-
-def get_route_dist_rad(sequence, instance_idx):
-    #renvoie la distance totale parcourue et le rayon d'une route
-    total_dist = 0
-    max_radius = 0
-    
-    #on parcourt la séquence par paires (i, j)
-    for k in range(len(sequence)-1):
-        i_idx = sequence[k]
-        j_idx = sequence[k+1]
-        
-        #distance de Manhattan entre deux points consécutifs
-        d = distM(i_idx, j_idx, instance_idx)
-        total_dist += d
-        
-    #Calcul du rayon (Moitié du diamètre Euclidien entre les commandes)
-    orders_in_route = sequence[1:-1]
-    max_euclidean_dist = 0
-    if len(orders_in_route) > 1:
-        for idx_a in range(len(orders_in_route)):
-            for idx_b in range(idx_a + 1, len(orders_in_route)):
-                d_e = distE(orders_in_route[idx_a], orders_in_route[idx_b], instance_idx)
-                if d_e > max_euclidean_dist:
-                    max_euclidean_dist = d_e
-    max_radius = 0.5 * max_euclidean_dist
-    return total_dist, max_radius
-
-
+### OPTIMISATION
 def get_best_vehicle(sequence, instance_idx, df_inst):
     #calcul des caractéristiques de la route "sequence"
     total_weight = sum(df_inst.loc[df_inst['id'] == node, 'order_weight'].values[0] 
@@ -227,6 +227,9 @@ def route_cost(sequence, instance_idx, df_inst):
                 min_cost = cost
                 best_family = v['family']         
     return min_cost, best_family
+
+
+
 
 #########################################
 #          BOUCLE SUR LES INSTANCES
