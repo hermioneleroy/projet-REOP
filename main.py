@@ -345,6 +345,60 @@ def deplacer_client_proche(routes, instance_idx, k_neighbors=5):
     return routes
 
 
+def eliminer_petites_routes(routes, instance_idx):
+    #on trie les routes par nombre de clients croissant
+    indices_tries = sorted(range(len(routes)), key=lambda i: len(routes[i]['sequence']))
+    
+    routes_a_supprimer = []
+    
+    for i in indices_tries:
+        route_source = routes[i]
+        sequence_source = list(route_source["sequence"][1:-1]) #les clients de la petite route
+        
+        if len(sequence_source)>4:continue
+
+        #on garde trace des clients que l'on a réussi à déplacer
+        clients_deplaces = []
+        modif_temporaires = [] #pour annuler si on ne peut pas tout déplacer
+
+        for client in sequence_source:
+            place_trouvee = False
+            
+            #on cherche une place dans TOUTES les autres routes
+            for j in range(len(routes)):
+                if i == j or j in routes_a_supprimer: continue
+                
+                route_cible = routes[j]
+                
+                #test d'insertion à toutes les positions possibles de la route cible
+                for pos in range(1, len(route_cible["sequence"])):
+                    nouvelle_seq = route_cible["sequence"][:pos] + [client] + route_cible["sequence"][pos:]
+                    
+                    #vérification capacité et temps via get_best_vehicle
+                    best_f, _ = get_best_vehicle(nouvelle_seq, instance_idx)
+                    
+                    if best_f is not None:
+                        #on mémorise la modification pour cette route cible
+                        modif_temporaires.append((j, nouvelle_seq, best_f))
+                        clients_deplaces.append(client)
+                        place_trouvee = True
+                        break
+                if place_trouvee: break
+            
+            if not place_trouvee:
+                break #impossible de vider entièrement cette route -> on passe à la suivante
+        
+        #si tous les clients de la route source ont été déplacés ailleurs
+        if len(clients_deplaces) == len(sequence_source):
+            #on applique les modifications aux routes cibles
+            for idx_route, seq, fam in modif_temporaires:
+                routes[idx_route]["sequence"] = seq
+                routes[idx_route]["family"] = fam
+            routes_a_supprimer.append(i)
+            print(f"Route {i} éliminée !")
+
+    #Nettoyage final des routes supprimées
+    return [r for idx, r in enumerate(routes) if idx not in routes_a_supprimer]
 
 
 #########################################
@@ -421,7 +475,8 @@ for A in range(10):
             final_routes.append({"family":final_family, "sequence":optimized_seq})
     
     if final_routes:
-        final_routes = deplacer_client_proche(final_routes, A, k_neighbors=10)
+        final_routes = eliminer_petites_routes(final_routes, A)
+        final_routes = deplacer_client_proche(final_routes, A, k_neighbors=0)
 
 
     #########################################
