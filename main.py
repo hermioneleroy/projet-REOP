@@ -25,12 +25,6 @@ for k in range(1, 11):
     df = pd.read_csv(file_path)
     instances.append(df.to_dict(orient="records"))
 
-# Chargement instances
-instances = []
-for k in range(1, 11):
-    file_path = f"instance_{k:02d}.csv"
-    df = pd.read_csv(file_path)
-    instances.append(df.to_dict(orient="records"))
 
 
 #########################################
@@ -205,7 +199,48 @@ def get_best_vehicle(total_weight, total_dist, max_radius):
                 best_family = v['family']   
     return best_family
 
+def get_best_vehicle(sequence, instance_idx, df_inst):
+    #calcul des caractéristiques de la route "sequence"
+    total_weight = sum(df_inst.loc[df_inst['id'] == node, 'order_weight'].values[0] 
+                      for node in sequence if node != 0)
+    total_dist, max_radius = get_route_dist_rad(sequence, instance_idx)
+    
+    best_family = None
+    min_total_cost = float('inf')
+    
+    for index, v in data_vehicles.iterrows():
+        family = v['family']
+        #vérification capacité (évite appel is_route_possible lourd)
+        if v['max_capacity'] >= total_weight:
+            #vérification temps 
+            if is_route_possible(family, sequence[1:-1], instance_idx):
+                #minimiser le coût
+                current_cost = v['rental_cost'] + v['fuel_cost']*total_dist + v['radius_cost']*max_radius    
+                if current_cost < min_total_cost:
+                    min_total_cost = current_cost
+                    best_family = family
+    return best_family, min_total_cost
 
+
+#coût d'une route
+def route_cost(sequence, instance_idx, df_inst):
+    #Poids de la route
+    total_w = sum(df_inst.loc[df_inst['id'] == order, 'order_weight'].values[0] for order in sequence if order != 0)
+    
+    #Distance et rayon de la route
+    d_tot, r_max = get_route_dist_rad(sequence, instance_idx)
+    
+    #Trouver le véhicule qui minimise rental + fuel + radius
+    best_family = None
+    min_cost = float('inf')
+    
+    for _, v in data_vehicles.iterrows():
+        if v['max_capacity'] >= total_w:
+            cost = v['rental_cost'] + (v['fuel_cost']*d_tot) + (v['radius_cost']*r_max)
+            if cost < min_cost:
+                min_cost = cost
+                best_family = v['family']         
+    return min_cost, best_family
 
 #########################################
 #          BOUCLE SUR LES INSTANCES
@@ -222,16 +257,31 @@ for A in range(10):
     routes_simples = {o_id: [0, o_id, 0] for o_id in orders_id}
 
     #calcul des savings
+    #initialisation des routes et calcul de leur coût individuel
+    routes_simples = {o_id: [0, o_id, 0] for o_id in orders_id}
+    costs_indiv = {}
+    for o_id in orders_id:
+        _, cost = get_best_vehicle([0, o_id, 0], A, df_inst)
+        costs_indiv[o_id] = cost
+
+    #calcul des savings
     savings = []
     for i in range(len(orders_id)):
         for j in range(i+1, len(orders_id)):
-            o_id_i = orders_id[i]
-            o_id_j = orders_id[j]
-            s = distM(o_id_i, 0, A) + distM(0, o_id_j, A) - distM(o_id_i, o_id_j, A)
-            savings.append((s, o_id_i, o_id_j))
+            id_i = orders_id[i]
+            id_j = orders_id[j]
+            
+            #si fusion
+            merged_seq = [0, id_i, id_j, 0]
+            best_f, cost_merged = get_best_vehicle(merged_seq, A, df_inst)
+            
+            #gain
+            if best_f is not None:
+                gain = (costs_indiv[id_i] + costs_indiv[id_j]) - cost_merged
+                savings.append((gain, id_i, id_j))
     
-    #on trie par saving décroissant
-    savings.sort(key=lambda x:x[0], reverse=True)
+    #Trier par gain décroissant
+    savings.sort(key=lambda x: x[0], reverse=True)
 
     #on essaie de fusionner les routes
     for s, i, j in savings:
@@ -275,6 +325,7 @@ for A in range(10):
         if family:
             final_routes.append({"family":family, "sequence":sequence})
     
+
     #########################################
     #      EXPORT CSV (Format Flexible)
     #########################################
