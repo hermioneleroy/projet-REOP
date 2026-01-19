@@ -113,9 +113,40 @@ def get_gamma_f_t(family, t_sec):
     return gamma
 
 
+def is_time_possible(family, sequence, instance_idx):
+    inst = instances[instance_idx]
+    current_time = 0.0 #départ du dépôt à t=0
+    prev_order = 0
+
+    for j in sequence[1:]: #ne pas calculer le trajet du dépôt au dépôt
+        d = distM(prev_order, j, instance_idx) #distance
+        
+        #Calcul de gamma: temps de départ = current_time
+        gamma_f_t = get_gamma_f_t(family, current_time)
+        
+        #temps de trajet = (d/v + temps parking)*Gamma(f,t)
+        row_f = data_vehicles.loc[data_vehicles["family"] == family].iloc[0] #récupère une ligne de vehicles où la famille est la bonne
+        travel_time = (d/row_f["speed"] + row_f["parking_time"])*gamma_f_t
+        
+        #Arrivée au client j
+        arrival_time = current_time + travel_time
+        
+        #vérification fenêtre de temps
+        t_min = inst[j]["window_start"]
+        t_max = inst[j]["window_end"]
+        if arrival_time > t_max:
+            return False
+            
+        #calcul du temps de départ de j
+        start_service = max(arrival_time, t_min)
+        current_time = start_service + inst[j]["delivery_duration"] 
+        prev_order = j
+    return True
+
+"""
 ### GESTION DES CONTRAINTES
 def is_route_possible(family, sequence, instance_idx):
-    """
+    "
     Determines if a given sequence of nodes can form a valid route
     for the specified instance index and family vehicle.
     
@@ -123,7 +154,7 @@ def is_route_possible(family, sequence, instance_idx):
         family (str): The family of vehicles
         sequence (list): A list of node indices representing the route.
         instance_idx (int): The index of the instance file.
-    """
+    "
     if not isinstance(sequence, (list, tuple)):
         #print("sequence must be a list or tuple.")
         return False
@@ -192,10 +223,10 @@ def is_route_possible(family, sequence, instance_idx):
         current_time = start_service + lj
         prev = j
     return True
-
+"""
 
 ### OPTIMISATION
-def get_best_vehicle(sequence, instance_idx, df_inst):
+def get_best_vehicle(sequence, instance_idx):
     #calcul des caractéristiques de la route "sequence"
     total_weight = sum(weights_dict[node] for node in sequence if node != 0)
     total_dist, max_radius = get_route_dist_rad(sequence, instance_idx)
@@ -208,7 +239,7 @@ def get_best_vehicle(sequence, instance_idx, df_inst):
         #vérification capacité (évite appel is_route_possible lourd)
         if v['max_capacity'] >= total_weight:
             #vérification temps 
-            if is_route_possible(family, sequence[1:-1], instance_idx):
+            if is_time_possible(family, sequence, instance_idx):
                 #minimiser le coût
                 current_cost = v['rental_cost'] + v['fuel_cost']*total_dist + v['radius_cost']*max_radius    
                 if current_cost < min_total_cost:
@@ -217,28 +248,8 @@ def get_best_vehicle(sequence, instance_idx, df_inst):
     return best_family, min_total_cost
 
 
-#coût d'une route
-def route_cost(sequence, instance_idx, df_inst):
-    #Poids de la route
-    sum(weights_dict[node] for node in sequence if node != 0)
-    
-    #Distance et rayon de la route
-    d_tot, r_max = get_route_dist_rad(sequence, instance_idx)
-    
-    #Trouver le véhicule qui minimise rental + fuel + radius
-    best_family = None
-    min_cost = float('inf')
-    
-    for _, v in data_vehicles.iterrows():
-        if v['max_capacity'] >= total_w:
-            cost = v['rental_cost'] + (v['fuel_cost']*d_tot) + (v['radius_cost']*r_max)
-            if cost < min_cost:
-                min_cost = cost
-                best_family = v['family']         
-    return min_cost, best_family
 
-
-def optimize_route_permut(sequence, instance_idx, family, df_inst):
+def optimize_route_permut(sequence, instance_idx, family):
     best_seq = list(sequence)
     #on ne touche pas au premier et dernier (dépôts : 0)
     gain = True
@@ -250,15 +261,15 @@ def optimize_route_permut(sequence, instance_idx, family, df_inst):
                 new_seq = best_seq[:i] + best_seq[i:j+1][::-1] + best_seq[j+1:]
                 
                 #vérification: faisable avec la famille actuelle?
-                if is_route_possible(family, new_seq[1:-1], instance_idx):
+                if is_time_possible(family, new_seq, instance_idx):
                     #compare la distance
                     d_old, _ = get_route_dist_rad(best_seq, instance_idx)
                     d_new, _ = get_route_dist_rad(new_seq, instance_idx)
                     
                     if d_new < d_old:
                         best_seq = new_seq
-                        improved = True
-        if not improved: break
+                        gain = True
+        if not gain: break
     return best_seq
 
 
@@ -283,7 +294,7 @@ for A in range(10):
     routes_simples = {o_id: [0, o_id, 0] for o_id in orders_id}
     costs_indiv = {}
     for o_id in orders_id:
-        _, cost = get_best_vehicle([0, o_id, 0], A, df_inst)
+        _, cost = get_best_vehicle([0, o_id, 0], A)
         costs_indiv[o_id] = cost
 
     #calcul des savings
@@ -295,7 +306,7 @@ for A in range(10):
             
             #si fusion
             merged_seq = [0, id_i, id_j, 0]
-            best_f, cost_merged = get_best_vehicle(merged_seq, A, df_inst)
+            best_f, cost_merged = get_best_vehicle(merged_seq, A)
             
             #gain
             if best_f is not None:
@@ -319,32 +330,20 @@ for A in range(10):
         #conditions pour fusionner : i et j dans des routes différentes
         if route_i is not None and route_j is not None and route_i != route_j:
             new_sequence = routes_simples[route_i][:-1] + routes_simples[route_j][1:]
+            best_f, cost = get_best_vehicle(new_sequence, A)
             
-            #vérifier si un véhicule peut faire cette route (poids + temps)
-            can_merge = False
-            best_f = None
-            
-            #on récupère le poids total de la route fusionnée
-            total_w = sum(weights_dict[client_id] for client_id in new_sequence if client_id != 0)
-            
-            for i, v in data_vehicles.iterrows():
-                if total_w <= v['max_capacity']: 
-                    if is_route_possible(v['family'], new_sequence[1:-1], A):
-                        can_merge = True
-                        break
-            
-            if can_merge:
-                #si on peut, on fusionne et on supprime donc la route j
+            if best_f is not None:
                 routes_simples[route_i] = new_sequence
                 del routes_simples[route_j]
 
+
     final_routes = []
     for r_id, sequence in routes_simples.items():
-        family, cost = get_best_vehicle(sequence, A, df_inst)
+        family, cost = get_best_vehicle(sequence, A)
 
         if family:
-            optimized_seq = optimize_route_permut(sequence, A, family, df_inst)
-            final_family, final_cost = get_best_vehicle(optimized_seq, A, df_inst)
+            optimized_seq = optimize_route_permut(sequence, A, family)
+            final_family, final_cost = get_best_vehicle(optimized_seq, A)
             final_routes.append({"family":final_family, "sequence":optimized_seq})
     
 
