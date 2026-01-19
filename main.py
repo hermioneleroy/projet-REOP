@@ -187,8 +187,7 @@ def is_route_possible(family, sequence, instance_idx):
 ### OPTIMISATION
 def get_best_vehicle(sequence, instance_idx, df_inst):
     #calcul des caractéristiques de la route "sequence"
-    total_weight = sum(df_inst.loc[df_inst['id'] == node, 'order_weight'].values[0] 
-                      for node in sequence if node != 0)
+    total_weight = sum(weights_dict[node] for node in sequence if node != 0)
     total_dist, max_radius = get_route_dist_rad(sequence, instance_idx)
     
     best_family = None
@@ -211,7 +210,7 @@ def get_best_vehicle(sequence, instance_idx, df_inst):
 #coût d'une route
 def route_cost(sequence, instance_idx, df_inst):
     #Poids de la route
-    total_w = sum(df_inst.loc[df_inst['id'] == order, 'order_weight'].values[0] for order in sequence if order != 0)
+    sum(weights_dict[node] for node in sequence if node != 0)
     
     #Distance et rayon de la route
     d_tot, r_max = get_route_dist_rad(sequence, instance_idx)
@@ -229,6 +228,29 @@ def route_cost(sequence, instance_idx, df_inst):
     return min_cost, best_family
 
 
+def optimize_route_permut(sequence, instance_idx, family, df_inst):
+    best_seq = list(sequence)
+    #on ne touche pas au premier et dernier (dépôts : 0)
+    gain = True
+    while gain:
+        gain = False
+        for i in range(1, len(best_seq) - 2):
+            for j in range(i + 1, len(best_seq) - 1):
+                #on inverse le segment entre i et j
+                new_seq = best_seq[:i] + best_seq[i:j+1][::-1] + best_seq[j+1:]
+                
+                #vérification: faisable avec la famille actuelle?
+                if is_route_possible(family, new_seq[1:-1], instance_idx):
+                    #compare la distance
+                    d_old, _ = get_route_dist_rad(best_seq, instance_idx)
+                    d_new, _ = get_route_dist_rad(new_seq, instance_idx)
+                    
+                    if d_new < d_old:
+                        best_seq = new_seq
+                        improved = True
+        if not improved: break
+    return best_seq
+
 
 
 #########################################
@@ -237,6 +259,7 @@ def route_cost(sequence, instance_idx, df_inst):
 for A in range(10):
     print(f"Instance {A+1:02d}...")
     df_inst = pd.read_csv(f"instance_{A+1:02d}.csv")
+    weights_dict = df_inst.set_index('id')['order_weight'].to_dict() #gain de temps
     orders = df_inst[df_inst['order_weight'].notna()].copy() #commandes (on exclut le dépôt)
     orders_id = orders['id'].astype(int).tolist()
     
@@ -292,7 +315,7 @@ for A in range(10):
             best_f = None
             
             #on récupère le poids total de la route fusionnée
-            total_w = sum(df_inst.loc[df_inst['id'] == client_id, 'order_weight'].values[0] for client_id in new_sequence if client_id != 0)
+            total_w = sum(weights_dict[client_id] for client_id in new_sequence if client_id != 0)
             
             for i, v in data_vehicles.iterrows():
                 if total_w <= v['max_capacity']: 
@@ -310,7 +333,9 @@ for A in range(10):
         family, cost = get_best_vehicle(sequence, A, df_inst)
 
         if family:
-            final_routes.append({"family":family, "sequence":sequence})
+            optimized_seq = optimize_route_permut(sequence, A, family, df_inst)
+            final_family, final_cost = get_best_vehicle(optimized_seq, A, df_inst)
+            final_routes.append({"family":final_family, "sequence":optimized_seq})
     
 
     #########################################
