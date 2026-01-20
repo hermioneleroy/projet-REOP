@@ -310,32 +310,14 @@ for A in range(10):
 
     #on essaie de fusionner les routes
     for s, i, j in savings:
-        #trouver les routes contenant i et j
-        #on cherche i en fin de route et j en début de route
-        r_i_end = next((rid for rid, rseq in routes_simples.items() if rseq[-2] == i), None)
-        r_j_start = next((rid for rid, rseq in routes_simples.items() if rseq[1] == j), None)
-        
-        #inverse : j en fin et i au début
-        r_j_end = next((rid for rid, rseq in routes_simples.items() if rseq[-2] == j), None)
-        r_i_start = next((rid for rid, rseq in routes_simples.items() if rseq[1] == i), None)
-
-        #test du sens i -> j
-        if r_i_end is not None and r_j_start is not None and r_i_end != r_j_start:
-            new_seq = routes_simples[r_i_end][:-1] + routes_simples[r_j_start][1:]
+        route_i = next((rid for rid, rseq in routes_simples.items() if rseq[-2] == i), None)
+        route_j = next((rid for rid, rseq in routes_simples.items() if rseq[1] == j), None)
+        if route_i is not None and route_j is not None and route_i != route_j:
+            new_seq = routes_simples[route_i][:-1] + routes_simples[route_j][1:]
             best_f, _ = get_best_vehicle(new_seq, A)
             if best_f:
-                routes_simples[r_i_end] = new_seq
-                del routes_simples[r_j_start]
-                continue # On passe au saving suivant car i ou j ont été modifiés
-
-        #Test du sens j -> i
-        if r_j_end is not None and r_i_start is not None and r_j_end != r_i_start:
-            new_seq = routes_simples[r_j_end][:-1] + routes_simples[r_i_start][1:]
-            best_f, _ = get_best_vehicle(new_seq, A)
-            if best_f:
-                routes_simples[r_j_end] = new_seq
-                del routes_simples[r_i_start]
-
+                routes_simples[route_i] = new_seq
+                del routes_simples[route_j]
     final_routes = []
     for r_id, sequence in routes_simples.items():
         family, cost = get_best_vehicle(sequence, A)
