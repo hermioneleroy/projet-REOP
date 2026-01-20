@@ -236,7 +236,7 @@ def eliminer_petites_routes(routes, instance_idx):
             for j in range(len(routes)):
                 if i == j or j in routes_a_supprimer: continue
                 
-                #on teste sur la séquence DÉJÀ MODIFIÉE de la cible
+                #on teste sur la séquence déjà modif de la cible
                 seq_cible = temp_sequences[j]
                 for pos in range(1, len(seq_cible)):
                     nouvelle_seq = seq_cible[:pos] + [client] + seq_cible[pos:]
@@ -311,33 +311,40 @@ for A in range(10):
     #on essaie de fusionner les routes
     for s, i, j in savings:
         #trouver les routes contenant i et j
-        route_i = None
-        route_j = None
-        for r_id, r_seq in routes_simples.items():
-            if r_seq[-2] == i: #dans sa route, i est le dernier client visité avant le dépôt
-                route_i = r_id
-            if r_seq[1] == j: #dans sa route, j est le premier client visité après le dépôt
-                route_j = r_id
+        #on cherche i en fin de route et j en début de route
+        r_i_end = next((rid for rid, rseq in routes_simples.items() if rseq[-2] == i), None)
+        r_j_start = next((rid for rid, rseq in routes_simples.items() if rseq[1] == j), None)
         
-        #conditions pour fusionner : i et j dans des routes différentes
-        if route_i is not None and route_j is not None and route_i != route_j:
-            new_sequence = routes_simples[route_i][:-1] + routes_simples[route_j][1:]
-            best_f, cost = get_best_vehicle(new_sequence, A)
-            
-            if best_f is not None:
-                routes_simples[route_i] = new_sequence
-                del routes_simples[route_j]
+        #inverse : j en fin et i au début
+        r_j_end = next((rid for rid, rseq in routes_simples.items() if rseq[-2] == j), None)
+        r_i_start = next((rid for rid, rseq in routes_simples.items() if rseq[1] == i), None)
 
+        #test du sens i -> j
+        if r_i_end is not None and r_j_start is not None and r_i_end != r_j_start:
+            new_seq = routes_simples[r_i_end][:-1] + routes_simples[r_j_start][1:]
+            best_f, _ = get_best_vehicle(new_seq, A)
+            if best_f:
+                routes_simples[r_i_end] = new_seq
+                del routes_simples[r_j_start]
+                continue # On passe au saving suivant car i ou j ont été modifiés
+
+        #Test du sens j -> i
+        if r_j_end is not None and r_i_start is not None and r_j_end != r_i_start:
+            new_seq = routes_simples[r_j_end][:-1] + routes_simples[r_i_start][1:]
+            best_f, _ = get_best_vehicle(new_seq, A)
+            if best_f:
+                routes_simples[r_j_end] = new_seq
+                del routes_simples[r_i_start]
 
     final_routes = []
     for r_id, sequence in routes_simples.items():
         family, cost = get_best_vehicle(sequence, A)
 
         if family:
-            #optimized_seq = optimize_route_permut(sequence, A, family)
-            #final_family, final_cost = get_best_vehicle(optimized_seq, A)
-            #final_routes.append({"family":final_family, "sequence":optimized_seq})
-            final_routes.append({"family":family, "sequence": sequence})
+            optimized_seq = optimize_route_permut(sequence, A, family)
+            final_family, final_cost = get_best_vehicle(optimized_seq, A)
+            final_routes.append({"family":final_family, "sequence":optimized_seq})
+            #final_routes.append({"family":family, "sequence": sequence})
     
     if final_routes:
         final_routes = eliminer_petites_routes(final_routes, A)
