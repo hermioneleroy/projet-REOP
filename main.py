@@ -326,10 +326,10 @@ for A in range(10):
             optimized_seq = optimize_route_permut(sequence, A, family)
             final_family, final_cost = get_best_vehicle(optimized_seq, A)
             final_routes.append({"family":final_family, "sequence":optimized_seq})
-            #final_routes.append({"family":family, "sequence": sequence})
+            final_routes.append({"family":family, "sequence": sequence})
     
-    #if final_routes:
-        #final_routes = eliminer_petites_routes(final_routes, A)
+    if final_routes:
+        final_routes = eliminer_petites_routes(final_routes, A)
 
 
 
