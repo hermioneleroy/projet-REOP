@@ -9,7 +9,7 @@ import os
 ##### Constantes #####
 rho = 6.371E6
 phi_0 = 48.764246
-
+SAFETY_MARGIN = 300 #marge sécurité de 5 minutes
 
 #########################################
 #           CHARGEMENT DONNÉES
@@ -131,7 +131,7 @@ def is_time_possible(row_f, sequence, instance_idx):
         #vérification fenêtre de temps
         t_min = inst[j]["window_start"]
         t_max = inst[j]["window_end"]
-        if arrival_time > t_max:
+        if arrival_time > t_max - SAFETY_MARGIN:
             return False
             
         #calcul du temps de départ de j
